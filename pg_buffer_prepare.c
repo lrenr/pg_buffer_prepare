@@ -1,0 +1,191 @@
+#include <stdio.h>
+#include "postgres.h"
+#include "optimizer/planner.h"
+#include "storage/bufmgr.h"
+#include "storage/lockdefs.h"
+#include "utils/elog.h"
+#include "utils/guc.h"
+#include "access/relation.h"
+#include "fmgr.h"
+#include "storage/bufmgr.h"
+#include "storage/smgr.h"
+#include "utils/rel.h"
+#include "utils/relcache.h"
+
+
+PG_MODULE_MAGIC;
+
+typedef enum CacheMode
+{
+	CACHE_MODE_OFF = 0,
+	CACHE_MODE_HOT = 1,
+	CACHE_MODE_COLD = 2,
+} CacheMode;
+
+static const struct config_enum_entry cache_mode_options[] = {
+	{"off", CACHE_MODE_OFF, false},
+	{"hot", CACHE_MODE_HOT, false},
+	{"cold", CACHE_MODE_COLD, false},
+	{NULL, 0, false}
+};
+
+static int	cache_mode = CACHE_MODE_OFF;
+
+/* Save previous planner hook user to be a good citizen */
+static planner_hook_type prev_planner_hook = NULL;
+
+/* Invalidate all blocks of a Relation in the buffercache */
+static void drop_rel(Relation rel) {
+	SMgrRelation smgr;
+
+	smgr = RelationGetSmgr(rel);
+	DropRelationsAllBuffers(&smgr, 1);
+	elog(NOTICE, "MODE=COLD | dropped all blocks of rel: %u\n", rel->rd_id);
+}
+
+/* Read all blocks of a Relation into the buffercache */
+static void read_rel(Relation rel) {
+	Buffer buf;
+	uint64 bn, block, precached_blocks;
+
+	bn = RelationGetNumberOfBlocks(rel);
+	precached_blocks = 0;
+	for (block = 0; block < bn; block++) {
+		buf = ReadBuffer(rel, block);
+		ReleaseBuffer(buf);
+		precached_blocks++;
+	}
+	elog(NOTICE, "MODE=HOT | precached %u blocks from rel: %u\n", precached_blocks, rel->rd_id);
+}
+
+/* Get ID of the Relation associated with a Scan Object */
+static Oid get_rel_id(Scan *scan, PlannedStmt *result) {
+	Index rtindex;
+	RangeTblEntry *rte;
+
+	rtindex = scan->scanrelid - 1;
+	rte = (RangeTblEntry*)list_nth(result->rtable, rtindex);
+	elog(NOTICE, "Length: %d | Index: %d\nType: %d\nRelId: %u\n",
+		list_length(result->rtable), rtindex, rte->type, rte->relid);
+
+	return rte->relid;
+}
+
+/* Custom hook that replaces planner_hook */
+static PlannedStmt *pg_buffer_prepare_planner(Query *parse, const char *query_string,
+						int cursorOptions, ParamListInfo boundParams)
+{
+	PlannedStmt *result;
+	Plan *next;
+	Scan *scan;
+	Relation rel;
+	Oid oid;
+	List *plan_list = NIL;
+	List *rel_list = NIL;
+	ListCell *cell;
+
+	/* Invoke the planner, possibly via a previous hook user */
+	if (prev_planner_hook)
+		result = prev_planner_hook(parse, query_string, cursorOptions,
+								   boundParams);
+	else
+		result = standard_planner(parse, query_string, cursorOptions,
+								  boundParams);
+	
+	elog(NOTICE, "Hello from pg_buffer_prepare!\n");
+
+	if (cache_mode == CACHE_MODE_OFF) return result;
+
+	next = result->planTree;
+	plan_list = list_make1(next);
+
+	foreach (cell, plan_list) {
+		next = cell->ptr_value;
+
+		switch (next->type) {
+		case T_SeqScan:
+			scan = &((SeqScan*)next)->scan;
+			oid = get_rel_id(scan, result);
+			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
+			break;
+		case T_IndexScan:
+			scan = &((IndexScan*)next)->scan;
+			oid = ((IndexScan*)next)->indexid;
+			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
+			oid = get_rel_id(scan, result);
+			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
+			break;
+		case T_IndexOnlyScan:
+			scan = &((IndexOnlyScan*)next)->scan;
+			oid = ((IndexOnlyScan*)next)->indexid;
+			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
+			oid = get_rel_id(scan, result);
+			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
+			break;
+		case T_BitmapIndexScan:
+			scan = &((BitmapIndexScan*)next)->scan;
+			oid = ((BitmapIndexScan*)next)->indexid;
+			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
+			oid = get_rel_id(scan, result);
+			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
+			break;
+		case T_BitmapHeapScan:
+			scan = &((BitmapHeapScan*)next)->scan;
+			oid = get_rel_id(scan, result);
+			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
+		default:
+			elog(NOTICE, "skipping scan type\n");
+		}
+
+		if (next->lefttree)
+			plan_list = lappend(plan_list, (void*)next->lefttree);
+		if (next->righttree)
+			plan_list = lappend(plan_list, (void*)next->righttree);
+		if (next->type)
+			elog(NOTICE, "Plan Node Type: %d\n", next->type);
+	}
+
+	foreach(cell, rel_list) {
+		rel = (Relation)cell->ptr_value;
+
+		switch (cache_mode) {
+		case CACHE_MODE_COLD:
+			drop_rel(rel);
+			break;
+		case CACHE_MODE_HOT:
+			read_rel(rel);
+			break;
+		default:
+			elog(ERROR, "pg_buffer_prepare: unsupported cache mode setting\n");
+		}
+
+		relation_close(rel, AccessShareLock);
+	}
+
+	list_free(plan_list);
+	list_free(rel_list);
+
+	return result;
+}
+
+/* Module load function */
+void
+_PG_init(void)
+{
+	DefineCustomEnumVariable("pg_buffer_prepare.cache_mode",
+							 "EXPLAIN format to be used for plan logging.",
+							 NULL,
+							 &cache_mode,
+							 CACHE_MODE_OFF,
+							 cache_mode_options,
+							 PGC_SUSET,
+							 0,
+							 NULL,
+							 NULL,
+							 NULL);
+
+	MarkGUCPrefixReserved("pg_buffer_prepare");
+
+	prev_planner_hook = planner_hook;
+	planner_hook = pg_buffer_prepare_planner;
+}
