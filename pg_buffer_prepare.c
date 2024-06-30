@@ -133,6 +133,17 @@ static PlannedStmt *pg_buffer_prepare_planner(Query *parse, const char *query_st
 			scan = &((BitmapHeapScan*)next)->scan;
 			oid = get_rel_id(scan, result);
 			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
+			break;
+		case T_TidScan:
+			scan = &((TidScan*)next)->scan;
+			oid = get_rel_id(scan, result);
+			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
+			break;
+		case T_TidRangeScan:
+			scan = &((TidRangeScan*)next)->scan;
+			oid = get_rel_id(scan, result);
+			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
+			break;
 		default:
 			elog(NOTICE, "skipping scan type\n");
 		}
