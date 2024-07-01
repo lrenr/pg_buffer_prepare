@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "postgres.h"
 #include "optimizer/planner.h"
+#include "parser/parsetree.h"
 #include "storage/bufmgr.h"
 #include "storage/lockdefs.h"
 #include "utils/elog.h"
@@ -63,8 +64,8 @@ static Oid get_rel_id(Scan *scan, PlannedStmt *result) {
 	Index rtindex;
 	RangeTblEntry *rte;
 
-	rtindex = scan->scanrelid - 1;
-	rte = (RangeTblEntry*)list_nth(result->rtable, rtindex);
+	rtindex = scan->scanrelid;
+	rte = rt_fetch(rtindex, result->rtable);
 	elog(NOTICE, "Length: %d | Index: %d\nType: %d\nRelId: %u\n",
 		list_length(result->rtable), rtindex, rte->type, rte->relid);
 
