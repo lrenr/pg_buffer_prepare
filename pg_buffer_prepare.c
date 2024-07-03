@@ -104,44 +104,28 @@ static PlannedStmt *pg_buffer_prepare_planner(Query *parse, const char *query_st
 		next = cell->ptr_value;
 
 		switch (next->type) {
+		case T_SampleScan:
+		case T_BitmapHeapScan:
+		case T_TidScan:
+		case T_TidRangeScan:
+		case T_SubqueryScan:
+		case T_FunctionScan:
+		case T_ValuesScan:
+		case T_TableFuncScan:
+		case T_CteScan:
+		case T_NamedTuplestoreScan:
+		case T_WorkTableScan:
 		case T_SeqScan:
 			scan = &((SeqScan*)next)->scan;
 			oid = get_rel_id(scan, result);
 			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
 			break;
+		case T_IndexOnlyScan:
+		case T_BitmapIndexScan:
 		case T_IndexScan:
 			scan = &((IndexScan*)next)->scan;
 			oid = ((IndexScan*)next)->indexid;
 			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
-			oid = get_rel_id(scan, result);
-			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
-			break;
-		case T_IndexOnlyScan:
-			scan = &((IndexOnlyScan*)next)->scan;
-			oid = ((IndexOnlyScan*)next)->indexid;
-			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
-			oid = get_rel_id(scan, result);
-			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
-			break;
-		case T_BitmapIndexScan:
-			scan = &((BitmapIndexScan*)next)->scan;
-			oid = ((BitmapIndexScan*)next)->indexid;
-			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
-			oid = get_rel_id(scan, result);
-			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
-			break;
-		case T_BitmapHeapScan:
-			scan = &((BitmapHeapScan*)next)->scan;
-			oid = get_rel_id(scan, result);
-			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
-			break;
-		case T_TidScan:
-			scan = &((TidScan*)next)->scan;
-			oid = get_rel_id(scan, result);
-			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
-			break;
-		case T_TidRangeScan:
-			scan = &((TidRangeScan*)next)->scan;
 			oid = get_rel_id(scan, result);
 			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
 			break;
