@@ -1,2 +1,6 @@
 *.o
 *.so
+evaluation/postgres/*
+
+*/flake.nix
+*/flake.lock

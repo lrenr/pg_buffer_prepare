@@ -1,0 +1,10 @@
+services:
+    ubuntu:
+      container_name: postgres-benchmark
+      image: postgres_image
+      build:
+        context: .
+        dockerfile: Dockerfile
+      volumes:
+      - ./postgres:/home/postgres
+      shm_size: 1g

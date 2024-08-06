@@ -1,0 +1,70 @@
+FROM ubuntu:22.04
+RUN apt-get update && apt-get install -y \
+  make \
+  tar \
+  gcc \
+  wget \
+  less \
+  bison \
+  flex \
+  curl \
+  sudo \
+  lbzip2 \
+  unzip \
+  git \
+  libreadline8 \
+  libreadline-dev \
+  libicu70 \
+  libicu-dev \
+  zlib1g \
+  zlib1g-dev \
+  pkg-config \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+
+#
+# get PostBOUND
+#
+WORKDIR /home
+RUN git clone https://github.com/rbergm/PostBOUND
+
+#
+# get imdb database
+#
+WORKDIR /home
+ADD ./imdb-scripts /home/imdb-scripts
+
+#
+# add postgres user, because install script cannot be executed as root
+# give scripts to postgres user, otherwise permission problems
+#
+RUN useradd postgres_user -s /bin/bash
+RUN chown postgres_user -R /home/PostBOUND
+USER postgres_user
+
+#
+# setup postgres
+#
+WORKDIR /home/PostBOUND/postgres/
+RUN ./postgres-setup.sh
+
+USER root
+RUN ln /home/PostBOUND/postgres/postgres-server/build/bin/psql /usr/bin
+RUN ln /home/PostBOUND/postgres/postgres-server/build/bin/createdb /usr/bin
+
+USER postgres_user
+RUN ./postgres-start.sh
+
+
+#
+# user management
+#
+#RUN useradd -s /bin/bash -u 1000 postgres -p 000000 -g sudo
+#RUN mkdir -p /home/nico/postgres/installation/data \
+#  && chown postgres /home/nico/postgres/installation/data
+#RUN touch /home/nico/postgres/installation/logfile \
+#  && chown postgres /home/nico/postgres/installation/logfile
+#USER postgres
+
+#WORKDIR /home
+CMD ["tail", "-f", "/dev/null"]
