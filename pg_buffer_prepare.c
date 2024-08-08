@@ -80,6 +80,7 @@ static Oid get_rel_id(Scan *scan, PlannedStmt *result) {
 static List *shuffle_rel_list(List *rel_list) {
 	List *shuffle_list = NIL;
 	ListCell *cell;
+	int seed;
 	//Relation rels[1024];
 	Relation* rels = (Relation*)malloc(sizeof(Relation) * rel_list->length);
 	int count = 0;
@@ -87,15 +88,10 @@ static List *shuffle_rel_list(List *rel_list) {
 		rels[count] = (Relation)cell->ptr_value;
 		count++;
 	}
-	if (shuffle_seed == -1) {
-		int seed = time(NULL);
-		srand(seed);
-		elog(NOTICE, "Random Shuffle with Seed=%d\n", seed);
-	}
-	else {
-		srand(shuffle_seed);
-		elog(NOTICE, "Random Shuffle with Seed=%d\n", shuffle_seed);
-	}
+	if (shuffle_seed == -1) seed = time(NULL);
+	else seed = shuffle_seed;
+	srand(seed);
+	elog(NOTICE, "Random Shuffle with Seed=%d\n", seed);
 	for (int i = 0; i < rel_list->length - 1; i++) {
 		int j = rand() % (rel_list->length - 1);
 		Relation tmp = rels[i];
