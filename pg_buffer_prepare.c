@@ -1,4 +1,6 @@
+#include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "postgres.h"
 #include "optimizer/planner.h"
 #include "parser/parsetree.h"
@@ -31,6 +33,7 @@ static const struct config_enum_entry cache_mode_options[] = {
 };
 
 static int	cache_mode = CACHE_MODE_OFF;
+static int	shuffle_seed = -1;
 
 /* Save previous planner hook user to be a good citizen */
 static planner_hook_type prev_planner_hook = NULL;
@@ -70,6 +73,29 @@ static Oid get_rel_id(Scan *scan, PlannedStmt *result) {
 		list_length(result->rtable), rtindex, rte->type, rte->relid);
 
 	return rte->relid;
+}
+
+/* Shuffle the Scan Relation list into a random order (for evaluation) */
+static List *shuffle_rel_list(List *rel_list) {
+	List *shuffle_list = NIL;
+	ListCell *cell;
+	Relation rels[1024];
+	int count = 0;
+	foreach (cell, rel_list) {
+		rels[count] = (Relation)cell->ptr_value;
+		count++;
+	}
+	srand(shuffle_seed);
+	for (int i = 0; i < rel_list->length - 1; i++) {
+		int j = rand() % (rel_list->length - 1);
+		Relation tmp = rels[i];
+		rels[i] = rels[j];
+		rels[j] = tmp;
+	}
+	for (int i = 0; i < rel_list->length - 1; i++) {
+		shuffle_list = lappend(shuffle_list, rels[i]);
+	}
+	return shuffle_list;
 }
 
 /* Custom hook that replaces planner_hook */
@@ -141,7 +167,11 @@ static PlannedStmt *pg_buffer_prepare_planner(Query *parse, const char *query_st
 			elog(NOTICE, "Plan Node Type: %d\n", next->type);
 	}
 
-	foreach(cell, rel_list) {
+	if (shuffle_seed >= 0) {
+		rel_list = shuffle_rel_list(rel_list);
+	}
+
+	foreach (cell, rel_list) {
 		rel = (Relation)cell->ptr_value;
 
 		switch (cache_mode) {
@@ -169,7 +199,7 @@ void
 _PG_init(void)
 {
 	DefineCustomEnumVariable("pg_buffer_prepare.cache_mode",
-							 "EXPLAIN format to be used for plan logging.",
+							 "Sets the buffercache preparemode",
 							 NULL,
 							 &cache_mode,
 							 CACHE_MODE_OFF,
@@ -179,6 +209,18 @@ _PG_init(void)
 							 NULL,
 							 NULL,
 							 NULL);
+	
+	DefineCustomIntVariable("pg_buffer_prepare.shuffle_seed",
+							"Set a seed to randomize the rel_list (or -1 to turn off)",
+							NULL,
+							&shuffle_seed,
+							-1,
+							-1, INT_MAX,
+							PGC_SUSET,
+							0,
+							NULL,
+							NULL,
+							NULL);
 
 	MarkGUCPrefixReserved("pg_buffer_prepare");
 
