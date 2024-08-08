@@ -1,4 +1,5 @@
 #include <limits.h>
+#include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "postgres.h"
@@ -33,7 +34,7 @@ static const struct config_enum_entry cache_mode_options[] = {
 };
 
 static int	cache_mode = CACHE_MODE_OFF;
-static int	shuffle_seed = -1;
+static int	shuffle_seed = -2;
 
 /* Save previous planner hook user to be a good citizen */
 static planner_hook_type prev_planner_hook = NULL;
@@ -85,7 +86,8 @@ static List *shuffle_rel_list(List *rel_list) {
 		rels[count] = (Relation)cell->ptr_value;
 		count++;
 	}
-	srand(shuffle_seed);
+	if (shuffle_seed == -1) srand(time(NULL));
+	else srand(shuffle_seed);
 	for (int i = 0; i < rel_list->length - 1; i++) {
 		int j = rand() % (rel_list->length - 1);
 		Relation tmp = rels[i];
@@ -167,7 +169,7 @@ static PlannedStmt *pg_buffer_prepare_planner(Query *parse, const char *query_st
 			elog(NOTICE, "Plan Node Type: %d\n", next->type);
 	}
 
-	if (shuffle_seed >= 0) {
+	if (shuffle_seed >= -1) {
 		rel_list = shuffle_rel_list(rel_list);
 	}
 
@@ -211,11 +213,11 @@ _PG_init(void)
 							 NULL);
 	
 	DefineCustomIntVariable("pg_buffer_prepare.shuffle_seed",
-							"Set a seed to randomize the rel_list (or -1 to turn off)",
+							"Set a seed to randomize the rel_list (or -2 to turn off and -1 for time based srand)",
 							NULL,
 							&shuffle_seed,
-							-1,
-							-1, INT_MAX,
+							-2,
+							-2, INT_MAX,
 							PGC_SUSET,
 							0,
 							NULL,
