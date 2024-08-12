@@ -165,7 +165,7 @@ static PlannedStmt *pg_buffer_prepare_planner(Query *parse, const char *query_st
 			rel_list = lappend(rel_list, relation_open(oid, AccessShareLock));
 			break;
 		default:
-			elog(NOTICE, "skipping scan type\n");
+			elog(NOTICE, "skipping node\n");
 		}
 
 		if (next->lefttree)
