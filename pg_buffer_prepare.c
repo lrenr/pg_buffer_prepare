@@ -120,7 +120,7 @@ static PlannedStmt *pg_buffer_prepare_planner(Query *parse, const char *query_st
 	List *rel_list = NIL;
 	ListCell *cell;
 
-	/* Invoke the default planner */
+	/* Invoke the prev defined planner */
 	if (prev_planner_hook)
 		result = prev_planner_hook(parse, query_string, cursorOptions,
 								   boundParams);
