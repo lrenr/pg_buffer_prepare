@@ -1,5 +1,5 @@
 # pg_buffer_prepare extension
-comment = 'track planning and execution statistics of all SQL statements executed'
+comment = 'implement hot and cold start capability'
 default_version = '1.0'
 module_pathname = '$libdir/pg_buffer_prepare'
 relocatable = true
