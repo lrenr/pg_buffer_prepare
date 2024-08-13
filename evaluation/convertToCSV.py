@@ -1,12 +1,10 @@
-import copy
 from pathlib import Path
 import functools
-import sys
 
 SEP = "; "
 #MODE = "pgdefault"
-#MODE = "coldstart"
-MODE = "hotstart"
+MODE = "coldstart"
+#MODE = "hotstart"
 
 queriesPathList = Path("./postgres/queries/").glob('**/*.sql')
 tmpPath = "./postgres/queries-outp/" + MODE

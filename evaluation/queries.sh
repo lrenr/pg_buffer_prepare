@@ -1,18 +1,22 @@
 # determine current database mode
+
+#config="set pg_buffer_prepare.shuffle_seed=42069;\n"
+config=""
+
 case $1 in
 	pgdefault)
 		mode=pgdefault
-		config="set pg_buffer_prewarm.cache_mode=OFF; \n show pg_buffer_prewarm.cache_mode;"
+		config="${config}set pg_buffer_prepare.cache_mode=off; \n show pg_buffer_prepare.cache_mode;\n"
 		;;
 	
 	hotstart)
 		mode=hotstart
-		config="set pg_buffer_prewarm.cache_mode=HOT;\n show pg_buffer_prewarm.cache_mode;"
+		config="${config}set pg_buffer_prepare.cache_mode=hot;\n show pg_buffer_prepare.cache_mode;\n"
 		;;
 	
 	coldstart)
 		mode=coldstart
-		config="set pg_buffer_prewarm.cache_mode=COLD; \n show pg_buffer_prewarm.cache_mode;"
+		config="${config}set pg_buffer_prepare.cache_mode=cold; \n show pg_buffer_prepare.cache_mode;\n"
 		;;
 	
 	*)
@@ -70,9 +74,16 @@ for ((curr_iter=0; curr_iter < $iterations; curr_iter++)); do
 	# iterate over alls queries
 	cd ../queries-prep
 	echo -n "mode: $mode | iteration: $curr_iter\n"
+
 	for file in $(ls *.sql | shuf); do
-		echo -n "$file" &&
-		
+
+		# cover debug option
+		# runs only one queryyy
+		if [ "${file}" != "1a.sql" ] && [ "${3}" == "debug" ]; then
+			continue
+		fi
+
+
 		# get docker id
 		long_id=$(docker ps --no-trunc | sed '1d' | cut -d' ' -f1)
 
